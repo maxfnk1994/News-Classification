@@ -4,19 +4,30 @@
 ### last modified date 03/13/20
 
 Main tasks in this project
+
 I.	Business Intelligence
+
     1.	After news being published, when is the stock price affected [min / h / d]?
+
     2.	After news being published, how does the wave of the stock price develop?
+
         •	When was the first increase?
+
         •	When was the maximum?
+
         •	When was the return back to “normality”?
+
     3.	Before the news being published, how does the stock price behave?
+
         •	Is a price change before the general public is informed?
+
 II.	Model Building
+
     1.	Build a neural network that detects the probability of stock prices changes with regard to published news 
 
 
 Information about the project
+
 The ...
 
 ## Getting Started / About this repository
