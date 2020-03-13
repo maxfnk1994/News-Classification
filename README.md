@@ -49,7 +49,7 @@ In this folder you find the used data for this project.
 ## Prerequisites
 
 Install in R following packages / libraries (the install.packages commands are commented out, if you need to install, please run it first.)
- - 
+    - ...
 
 ## Database
 
