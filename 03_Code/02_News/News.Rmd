@@ -1,0 +1,516 @@
+---
+title: "Classification of news headlines with impact on the probability of stock prices changes"
+author: "Max Franke"
+date: April 28, 2020
+output: html_document
+---
+Course: CIS-627 CAPSTONE
+
+Term: Spring/T2
+
+# Capstone Project {.tabset}
+
+## Approach
+
+In this analysis, the following approach will be used: - The following is a list of the most important topics:
+
+### 0. Workspace preparation
+
+ - This section will clean the workspace, load the libraries, the datasets and prepare the datasets as followed:
+ 
+ - The news dataset will transformed, so that there will be three datasets:
+ 
+  a. Original Date
+  
+  b. Date - 5 minutes 
+  
+  c. Date + 5 minutes
+
+ Then the datasets for the stocks will be loaded (for the start just the symbol AAPL)
+
+### 1. Merge the data sets
+
+ - The analysis starts with two datasets: Healines from 2019/2020 (1) and the Close stock prices from Apple (2) - Note: Later on, this approach will be rolled out for all companies in the  [Dow Jones Industrial Average](https://money.cnn.com/data/dow30/)
+ - The merging process will be done via the Date as a key and for all three Date options
+
+***
+
+### 2. Creating input data
+ 
+ - Transforming the news to serve as an input for the model.
+ 
+ - The result of preprocessing the data should be:
+ 
+
+| Variable             	| Detail                                                                           	|
+|----------------------	|----------------------------------------------------------------------------------	|
+| Date | Date of the posted headline |
+| Headline | Content of headline |
+| Description | Description of headline |
+| Symbol | Symbol of the company from the [DJIA](https://money.cnn.com/data/dow30/) |
+| Open | Open price of stock concerning Date |
+| High | High price of stock concerning Date |
+| Low | Low price of stock concerning Date |
+| Close | Close price of stock concerning Date |
+| Close_future | Close price of stock concerning Date minus 5 min |
+| Close_past | Close price of stock concerning Date plus 5 min |
+| PriceChange | Binomial if there was a price change (1 = stock price rises / 0 = stock prise falls) |
+
+***
+
+### 3. Distribution of the data
+
+ - Analysis about some relationships and distributions (e.g. how many price changes do we have?)
+ 
+### 4. Model Building
+
+ - Develop the convolutional neural network which takes as input the transformed news
+
+### 5. Model Evaluation
+
+ - Check the model performance: Accuracy, overfitting etc.
+ 
+### 6. Model Optimization
+
+
+## Workspace preparation
+### Approach
+***
+In this section the workspace will be prepared. This means that first the global environment will be cleaned, and all required packages will be loaded.
+
+***
+### Clean Workspace
+```{r}
+rm(list = ls())
+```
+
+### Install libraries
+```{r message=FALSE, warning=FALSE, results='hide'}
+## Install packages
+my_packages <- c("plotly", "tidyverse", "reshape", "keras", "tm", "SnowballC")
+#install.packages(my_packages, repos = "http://cran.rstudio.com")
+```
+
+### Load packages
+```{r message=FALSE, warning=FALSE, results='hide'}
+library(tidyverse)
+library(plotly)
+library(reshape)
+library(keras)
+library(tm)
+library(SnowballC)
+```
+
+### Load news Dataset
+```{r message=FALSE, warning=FALSE}
+## Load data of stocks with headlines and description
+setwd("/Users/MaxFranke/Desktop/05_Big Data Analytics/04_Classes/04 SP:Term2/CIS-627 CAPSTONE/News-Classification/02_Data/01_NewsApi")
+news <- read.csv("News - 2019-2020.csv")
+```
+### Transform data
+```{r message=FALSE, warning=FALSE}
+# Names of dataframe
+names(news) <- c("Date", "headline", "description")
+news$Date <- strptime(news$Date, format = "%m/%d/%y %H:%M") + 5*60 - 5*60
+knitr::kable(head(news, 3), format = "markdown")
+
+```
+
+### Load APPL dataset
+```{r message=FALSE, warning=FALSE, results='hide'}
+setwd("/Users/MaxFranke/Desktop/05_Big Data Analytics/04_Classes/04 SP:Term2/CIS-627 CAPSTONE/News-Classification/02_Data/03_stocks")
+apple <- read.csv("AAPL.USUSD_Candlestick_1_M_ASK_01.01.2019-01.04.2020.csv")
+```
+### Transform data
+```{r message=FALSE, warning=FALSE}
+apple$Local.time <- strptime(apple$Local.time, format = "%d.%m.%Y %H:%M")
+rownames(apple) <- NULL
+names(apple) <- c("Date", "Close", "Volume")
+apple$Date <- apple$Date + 5*60 - 5*60
+knitr::kable(head(apple, 3), format = "markdown")
+```
+
+## Headline Tags
+
+```{r}
+# Check if Apple or AAPL exists in headline
+text_Apple_headline <- str_detect(news$headline, c("Apple", "AAPL"))
+# Check if Apple or AAPL exists in description
+text_Apple_description <- str_detect(news$description, c("Apple", "AAPL"))
+# Summarise in one dataset
+text_Apple_merge <- data.frame(headline = text_Apple_headline, description = text_Apple_description)
+# Get the rows where Apple or AAPL exists
+text_Apple_result <- which(text_Apple_merge[,1] == TRUE | text_Apple_merge[,2] == TRUE)
+
+Apple <- news[text_Apple_headline,]
+knitr::kable(head(Apple, 3), format = "markdown")
+```
+
+### Iterate through each headline and count the words
+
+
+#### Step 1: Extract and then load the headlines from dataset
+
+First, the column "headline" is extracted and saved to a txt.file. Then, this txt. file is load into R.
+
+The following table shows the first 6 titles of this file:
+
+```{r echo=FALSE}
+# Write column headline to txt. file
+write.table(Apple$headline, "Apple_headline.txt", row.names = FALSE, col.names = FALSE)
+text <- readLines("Apple_headline.txt")
+knitr::kable(head(text, 3), format = "markdown")
+```
+
+#### Step 2: Text mining
+
+1. Load the txt. file as a corpus
+
+```{r echo=FALSE}
+# Load the data as a corpus
+docs <- Corpus(VectorSource(text))
+```
+
+3. Text transformation
+  - Replace special characters from text
+
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+toSpace <- content_transformer(function (x , pattern ) gsub(pattern, " ", x))
+docs <- tm_map(docs, toSpace, "/")
+docs <- tm_map(docs, toSpace, "@")
+docs <- tm_map(docs, toSpace, "\\|")
+```
+
+4. Cleaning the text
+ - Convert the text to lower case
+ - Remove punctuations
+ - Eliminate extra white spaces
+ - Remove english common stopwords
+ - Remove the name of the stocks
+
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+# Convert the text to lower case
+docs <- tm_map(docs, content_transformer(tolower))
+# Remove punctuations
+docs <- tm_map(docs, removePunctuation)
+# Eliminate extra white spaces
+docs <- tm_map(docs, stripWhitespace)
+# Remove english common stopwords
+docs <- tm_map(docs, removeWords, stopwords("english"))
+# Remove the name of the stocks
+docs <- tm_map(docs, removeWords, c("apple", "apples"))
+```
+
+#### Step 3: Building a term-document matrix
+A term-document matris is a table which contains the frequency of the words.
+
+In the following table, the first 20 words of this term-document matrix are shown.
+
+```{r echo=FALSE}
+dtm <- TermDocumentMatrix(docs)
+dtm_matrix <- as.matrix(dtm)
+dtm_vector <- sort(rowSums(dtm_matrix),decreasing=TRUE)
+dtm_dataframe <- data.frame(word = names(dtm_vector),freq=dtm_vector)
+rownames(dtm_dataframe) <- NULL
+knitr::kable(head(dtm_dataframe, 20), format = "markdown")
+```
+#### Create result dataframe
+```{r}
+Apple_Result <- data.frame(Symbol = "AAPL",
+                           Counts = dtm_dataframe$freq,
+                           Tag = dtm_dataframe$word)
+Apple_Result[, c("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15")] <- NA
+names(Apple_Result) <- c("Symobl", "Counts", "Tag", paste0("PD", seq(1:15)))
+for (i in 4:18) {
+  Apple_Result[,i] <- as.numeric(Apple_Result[,i])
+}
+
+knitr::kable(head(Apple_Result, 5), format = "markdown")
+```
+
+
+#### For loop
+
+For each word, the price difference from 1-15min will be calculated and to the result dataframe attanded
+
+```{r}
+for (i in 1:nrow(dtm_dataframe)) {
+  # Get all rows from apple, where we can find the word i
+  Apple_table <- Apple[str_detect(tolower(as.character(Apple$headline)), as.character(dtm_dataframe[i,1])),]
+  # Merge the datasets
+  result <- merge(Apple_table, apple, by = "Date", sort = FALSE)
+  print(i)
+  
+  for (min in 1:15) {
+    minute <- result$Date + min*60
+    result$PriceDifference <- result$Close - apple[which(apple$Date %in% minute),2]
+    sumPD <- sum(result$PriceDifference)
+    Apple_Result[i,3+min] <- sumPD
+    print(min)
+  }
+}
+
+knitr::kable(head(Apple_Result, 10), format = "markdown")
+```
+
+#### Statistical difference between the minutes
+```{r}
+anova_df <- melt(Apple_Result, id = c("Symobl", "Counts", "Tag"))
+
+aov <- aov(value ~ variable, data = anova_df)
+summary(aov)
+```
+
+There is no significant difference between the time frames.
+
+#### Most profitable time frame
+```{r}
+PD_comparison <- anova_df %>%
+          dplyr::group_by(variable) %>%
+          dplyr::summarize(SumOfPriceDifferences = sum(value))
+
+knitr::kable(head(PD_comparison[order(PD_comparison$SumOfPriceDifferences, decreasing = TRUE),], 15), format = "markdown")
+```
+
+The time frame 7 minutes is the most profitable.
+
+#### Most profitable word
+```{r}
+profitable_word <- Apple_Result %>%
+                      dplyr::group_by(Counts, Tag) %>%
+                      summarize(SumOfPriceDiffernces = PD1+PD2+PD3+PD4+PD5+PD6+PD7+PD8+PD9+PD10+PD11+PD12+PD13+PD14+PD15)
+
+knitr::kable(head(profitable_word[order(profitable_word$SumOfPriceDiffernces, decreasing = TRUE),], 15), format = "markdown")
+```
+
+The word app shows the highest sum of price difference and is therefore, the most profitable
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Merging datsets
+
+### Merge
+```{r message=FALSE, warning=FALSE}
+# present
+merge <- merge(news, apple, by = "Date", sort = FALSE)
+knitr::kable(head(merge, 3), format = "markdown")
+# Past
+merge_past <- merge(past, apple, by = "Date", sort = FALSE)
+knitr::kable(head(merge_past, 3), format = "markdown")
+
+# Future
+merge_future <- merge(future, apple, by = "Date", sort = FALSE)
+knitr::kable(head(merge_past, 3), format = "markdown")
+
+```
+
+```{r message=FALSE, warning=FALSE}
+# Past
+merge_past$Date_present <- merge_past$Date + 5*60
+names(merge_past) <- c("Date_Past", "headline", "description", "Open", "High", "Low", "Close_past", "Date")
+
+knitr::kable(head(merge_past[,c(1,2,4:8)], 3), format = "markdown")
+
+```
+
+```{r message=FALSE, warning=FALSE}
+# Future
+merge_future$Date_present <- merge_future$Date - 5*60
+names(merge_future) <- c("Date_Past", "headline", "description", "Open", "High", "Low", "Close_future", "Date")
+knitr::kable(head(merge_future[,c(1,2,4:8)], 3), format = "markdown")
+
+```
+
+```{r message=FALSE, warning=FALSE}
+# Result
+result <- merge(merge, merge_past[,c(2,7:8)], by = c("Date", "headline"), sort = FALSE)
+result <- merge(result, merge_future[,c(2,7:8)], by = c("Date", "headline"), sort = FALSE)
+
+# Price change
+result$PriceChange <- if_else(result$Close == result$Close_past & result$Close == result$Close_future, FALSE, TRUE)
+knitr::kable(head(result[,c(1,2,4:10)], 3), format = "markdown")
+
+```
+
+```{r}
+# First look for a price change
+ggplot(data = result, mapping = aes(x = PriceChange)) +
+  geom_bar(mapping = aes(y = ..prop.., group = 1)) +
+  guides(fill = FALSE) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(title = "Distribution of price changes for the symbol AAPL",
+       subtitle = "Price change in comparison to 5 min before and after",
+       y = "Proportion",
+       x = "Price Change")
+```
+
+## Creating input data
+
+Tokenizers
+```{r}
+# converting the headlines into a sequence of integers
+text <- result$headline
+```
+
+Number of words
+```{r}
+max_features <- 1000
+tokenizer <- text_tokenizer(num_words = max_features)
+```
+
+Fit to the headlines
+```{r}
+tokenizer %>% fit_text_tokenizer(text)
+```
+
+Number of documents
+```{r}
+tokenizer$document_count
+```
+
+Word-Index list
+```{r}
+tokenizer$word_index %>% head()
+```
+
+List of integers
+```{r}
+text_seqs <- texts_to_sequences(tokenizer, text)
+knitr::kable(text_seqs %>% head(), format = "html")
+
+```
+
+
+## Distribution of the data
+
+### Development of price changes
+```{r message=FALSE, warning=FALSE}
+priceChange <- subset(result, PriceChange == TRUE)
+priceChange <- priceChange[,c(1,2,3,7,8,9)]
+priceChange_plot <- melt(priceChange, id = c("Date", "headline", "description"))
+names(priceChange_plot) <- c("Date", "headline", "description", "category", "ClosePrice")
+
+plot <- priceChange_plot %>%
+  dplyr::group_by(Date, category) %>%
+  dplyr::summarize(Mean = mean(ClosePrice))
+
+ggplot(data = plot, mapping = aes(x = Date, y = Mean, color = category)) +
+  geom_line(alpha = .5) +
+  labs(title = "Development of the Price changes",
+       y = "Average AAPL stock price")
+```
+
+### Significantly different
+```{r}
+aov <- aov(Mean ~ category, data = plot)
+summary(aov)
+TukeyHSD(aov)
+```
+
+## Model Building
+
+Set parameters
+```{r}
+maxlen <- 100
+batch_size <- 32
+embedding_dims <- 50
+filters <- 64
+kernel_size <- 3
+hidden_dims <- 50
+epochs <- 50
+```
+
+Preprocessing the text
+```{r}
+x_train <- text_seqs %>% pad_sequences(maxlen = maxlen)
+dim(x_train)
+```
+
+y-variable
+```{r}
+y_train <- result$PriceChange
+length(y_train)
+```
+
+Model building
+```{r}
+model <- keras_model_sequential() %>%
+  layer_embedding(max_features, embedding_dims, input_length = maxlen) %>%
+  layer_dropout(0.5) %>%
+  layer_conv_1d(
+    filters, kernel_size,
+    padding = "valid", activation = "relu", strides = 1) %>%
+  layer_global_max_pooling_1d() %>%
+  layer_dense(hidden_dims) %>%
+  layer_dropout(0.5) %>%
+  layer_activation("relu") %>%
+  layer_dense(1) %>%
+  layer_activation("sigmoid") %>% compile(
+  loss = "binary_crossentropy",
+  optimizer = "adam",
+  metrics = "accuracy"
+)
+```
+
+## Model Evaluation
+
+```{r}
+hist <- model %>%
+  fit(
+    x_train,
+    y_train,
+    batch_size = batch_size,
+    epochs = epochs,
+    validation_split = 0.8
+  )
+plot(hist)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

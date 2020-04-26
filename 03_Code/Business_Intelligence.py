@@ -1,4 +1,4 @@
-from newsapi.newsapi_client import NewsApiClient
+from newsapi import NewsApiClient
 
 # Init
 newsapi = newsapi(api_key='440fff2cc7564bf8a3fa4bbe5a93611e')

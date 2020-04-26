@@ -1,0 +1,494 @@
+---
+title: "Classification of news headlines with impact on the probability of stock prices changes"
+author: "Max Franke"
+date: April 28, 2020
+output: html_document
+---
+Course: CIS-627 CAPSTONE
+
+Term: Spring/T2
+
+# Capstone Project {.tabset}
+
+## Approach
+
+In this analysis, the following approach will be used:
+
+### 0. Workspace preparation
+
+ - This section will clean the workspace, load the libraries, the datasets and prepare the datasets
+
+### 1. Headline Tags
+
+ - The analysis starts with two datasets: Healines from 2019/2020 (1) and the Close stock prices from Apple (2) - Note: Later on, this approach will be rolled out for all companies in the  [Dow Jones Industrial Average](https://money.cnn.com/data/dow30/)
+
+#### Process
+
+ (1) Subset the news (headline and description) for the stock symbol (e.g. "Apple", and "AAPL"; transformation in lowercases)
+ (2) Iterate through each headline of the subset and count the words, result: table of the most frequently mentioned tags (e.g. update)
+ (3) Create a result dataframe: Symbol, Counts, Tag, Price Difference from minute 1 to minute 15
+ 
+ (3a) For each tag, the price difference from 1-15min will be calculated and to the result dataframe attanded
+ 
+ (3b) Check if there is a statistical difference between the time frames
+ 
+***
+
+### 2. Comparison of price differences
+
+ (1) Most profitable time frame
+ (2) Most profitable tag
+ (3) Distribution of top ten tags by count
+
+### 3. Creating input data
+
+ Predictors (x) = current close price, Volume, avg. top three tag price difference
+ 
+ | Variable             	| Example value                                                                 	|
+|----------------------	|----------------------------------------------------------------------------------	|
+| Current close price | 157.54 |
+| Volume | 172 |
+| FirstTag | 28.809 |
+| SecondTag | 24.496 |
+| ThirdTag | 23.273 |
+ 
+ Outcome (y) = Price difference for x min
+
+***
+
+### 4. Model Building
+
+ - Develop the convolutional neural network which takes as input the predictors
+ 
+ - Set the parameters: Batch size, filters, kernel size, epochs etc.
+ 
+ - Define structure of the network (how many layers, how many neurons, how many trials)
+
+### 5. Model Evaluation
+
+ - Check the model performance: Accuracy, overfitting etc.
+ 
+ - Compare the trials for different network structures and prove statistically the performance
+ 
+***
+ 
+### 6. Model Optimization
+
+ - tbd
+
+## Workspace preparation
+### Approach
+***
+In this section the workspace will be prepared. This means that first the global environment will be cleaned, and all required packages will be loaded.
+
+***
+### Clean Workspace
+```{r}
+rm(list = ls())
+```
+
+### Install libraries
+```{r message=FALSE, warning=FALSE, results='hide'}
+## Install packages
+my_packages <- c("plotly", "tidyverse", "reshape", "keras", "tm", "SnowballC")
+#install.packages(my_packages, repos = "http://cran.rstudio.com")
+```
+
+### Load packages
+```{r message=FALSE, warning=FALSE, results='hide'}
+library(tidyverse)
+library(plotly)
+library(reshape)
+library(keras)
+library(tm)
+library(SnowballC)
+```
+
+### Load news Dataset
+```{r message=FALSE, warning=FALSE}
+## Load data of stocks with headlines and description
+setwd("/Users/MaxFranke/Desktop/05_Big Data Analytics/04_Classes/04 SP:Term2/CIS-627 CAPSTONE/News-Classification/02_Data/01_NewsApi")
+news <- read.csv("News - 2019-2020.csv")
+```
+### Transform data
+```{r message=FALSE, warning=FALSE}
+# Names of dataframe
+names(news) <- c("Date", "headline", "description")
+news$Date <- strptime(news$Date, format = "%m/%d/%y %H:%M") + 5*60 - 5*60
+knitr::kable(head(news, 3), format = "markdown")
+
+```
+
+### Load APPL dataset
+```{r message=FALSE, warning=FALSE, results='hide'}
+setwd("/Users/MaxFranke/Desktop/05_Big Data Analytics/04_Classes/04 SP:Term2/CIS-627 CAPSTONE/News-Classification/02_Data/03_stocks")
+apple <- read.csv("AAPL.USUSD_Candlestick_1_M_ASK_01.01.2019-01.04.2020.csv")
+```
+### Transform data
+```{r message=FALSE, warning=FALSE}
+apple$Local.time <- strptime(apple$Local.time, format = "%d.%m.%Y %H:%M")
+rownames(apple) <- NULL
+names(apple) <- c("Date", "Close", "Volume")
+apple$Date <- apple$Date + 5*60 - 5*60
+knitr::kable(head(apple, 3), format = "markdown")
+```
+
+## Headline Tags
+
+```{r, warning=FALSE}
+
+str_contains("abc", c("apple", "aaple"), logic = "and", ignore.case=TRUE)
+
+str_contains("hello", "el", ignore.case=TRUE))str_contains("abc", c("a", "b", "e"), logic = "and"))str_contains("abc", c("a", "b", "e"), logic = "or"))str_contains("abc", c("apple", "aaple"), logic = "and", ignore.case=TRUE))
+From Sean Mondesire to Everyone: (04:45 PM)
+)http://docs.h2o.ai/h2o/latest-stable/h2o-docs/data-science/deep-learning.html)http://docs.h2o.ai/h2o-tutorials/latest-stable/tutorials/deeplearning/index.html)
+From Sean Mondesire to Everyone: (04:47 PM)
+
+h2o::h2o.randomForest()
+m2 <- h2o.deeplearning(
+  model_id="dl_model_faster", 
+  training_frame=train, 
+  validation_frame=valid,
+  x=predictors,
+  y=response,
+  hidden=c(32,32,32),                  ## small network, runs faster
+  epochs=1000000,                      ## hopefully converges earlier...
+  score_validation_samples=10000,      ## sample the validation dataset (faster)
+  stopping_rounds=2,
+  stopping_metric="misclassification", ## could be "MSE","logloss","r2"
+  stopping_tolerance=0.01
+)
+
+
+
+
+# Check if Apple or AAPL exists in headline
+text_Apple_headline <- str_detect(tolower(news$headline), c("apple", "aapl"))
+# Check if Apple or AAPL exists in description
+text_Apple_description <- str_detect(tolower(news$description), c("apple", "aapl"))
+# Summarise in one dataset
+text_Apple_merge <- data.frame(headline = text_Apple_headline, description = text_Apple_description)
+# Get the rows where Apple or AAPL exists
+text_Apple_result <- which(text_Apple_merge[,1] == TRUE | text_Apple_merge[,2] == TRUE)
+
+Apple <- news[text_Apple_headline,]
+knitr::kable(head(Apple, 3), caption = paste("Identified news: ", nrow(Apple)), format = "markdown")
+```
+
+### Iterate through each headline and count the words
+
+
+#### Step 1: Extract and then load the headlines from dataset
+
+First, the column "headline" is extracted and saved to a txt.file. Then, this txt. file is load into R.
+
+The following table shows the first 3 titles of this file:
+
+```{r echo=FALSE}
+# Write column headline to txt. file
+write.table(Apple$headline, "Apple_headline.txt", row.names = FALSE, col.names = FALSE)
+text <- readLines("Apple_headline.txt")
+knitr::kable(head(data.frame(headline = text), 3), format = "markdown")
+```
+
+#### Step 2: Text mining
+
+1. Load the txt. file as a corpus
+
+```{r}
+# Load the data as a corpus
+docs <- Corpus(VectorSource(text))
+```
+
+3. Text transformation
+  - Replace special characters from text
+
+```{r warning=FALSE, message=FALSE}
+toSpace <- content_transformer(function (x , pattern ) gsub(pattern, " ", x))
+docs <- tm_map(docs, toSpace, "/")
+docs <- tm_map(docs, toSpace, "@")
+docs <- tm_map(docs, toSpace, "\\|")
+```
+
+4. Cleaning the text
+ - Convert the text to lower case
+ - Remove punctuations
+ - Eliminate extra white spaces
+ - Remove english common stopwords
+ - Remove the name of the stocks
+
+```{r warning=FALSE, message=FALSE}
+# Convert the text to lower case
+docs <- tm_map(docs, content_transformer(tolower))
+# Remove punctuations
+docs <- tm_map(docs, removePunctuation)
+# Eliminate extra white spaces
+docs <- tm_map(docs, stripWhitespace)
+# Remove english common stopwords
+docs <- tm_map(docs, removeWords, stopwords("english"))
+# Remove the name of the stocks
+docs <- tm_map(docs, removeWords, c("apple", "apples"))
+```
+
+#### Step 3: Building a term-document matrix
+A term-document matris is a table which contains the frequency of the words.
+
+In the following table, the first 20 words of this term-document matrix are shown.
+
+```{r}
+dtm <- TermDocumentMatrix(docs)
+dtm_matrix <- as.matrix(dtm)
+dtm_vector <- sort(rowSums(dtm_matrix),decreasing=TRUE)
+dtm_dataframe <- data.frame(word = names(dtm_vector),freq=dtm_vector)
+rownames(dtm_dataframe) <- NULL
+knitr::kable(head(dtm_dataframe, 20), format = "html")
+```
+#### Create result dataframe
+```{r}
+Apple_Result <- data.frame(Symbol = "AAPL",
+                           Counts = dtm_dataframe$freq,
+                           Tag = dtm_dataframe$word)
+Apple_Result[, c("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15")] <- NA
+names(Apple_Result) <- c("Symobl", "Counts", "Tag", paste0("PD", seq(1:15)))
+for (i in 4:18) {
+  Apple_Result[,i] <- as.numeric(Apple_Result[,i])
+}
+
+knitr::kable(head(Apple_Result, 5), format = "markdown")
+```
+
+
+#### ITERATION
+
+For each tag, the price difference from 1-15min will be calculated and to the result dataframe attanded
+
+```{r, warning=FALSE}
+for (i in 1:nrow(dtm_dataframe)) {
+  # Get all rows from apple, where we can find the word i
+  Apple_table <- Apple[str_detect(tolower(as.character(Apple$headline)), as.character(dtm_dataframe[i,1])),]
+  # Merge the datasets
+  result <- merge(Apple_table, apple, by = "Date", sort = FALSE)
+  
+  # Attand the price difference from minute 1 to minute 15 to the dataframe Apple_Result
+  for (min in 1:15) {
+    minute <- result$Date + min*60
+    result$PriceDifference <- result$Close - apple[which(apple$Date %in% minute),2]
+    sumPD <- sum(result$PriceDifference)
+    Apple_Result[i,3+min] <- sumPD
+  }
+}
+
+knitr::kable(head(Apple_Result, 10), format = "markdown")
+```
+
+***
+
+NOTE: The tag "app" shows high price differences. But this is not really true, because in this calculation all words which include the word app are considered. So, "app" can be found in "apple" wich is unlucky :(!
+
+***
+
+#### Statistical difference between the minutes
+```{r}
+anova_df <- melt(Apple_Result, id = c("Symobl", "Counts", "Tag"))
+
+aov <- aov(value ~ variable, data = anova_df)
+summary(aov)
+TukeyHSD(aov)
+```
+
+There is no significant difference between the time frames.
+
+
+## Tags and Price Differences
+
+
+#### Most profitable time frame
+```{r}
+PD_comparison <- anova_df %>%
+          dplyr::group_by(variable) %>%
+          dplyr::summarize(SumOfPriceDifferences = sum(value))
+
+knitr::kable(head(PD_comparison[order(PD_comparison$SumOfPriceDifferences, decreasing = TRUE),], 15), format = "markdown")
+```
+
+The time frame 7 minutes is the most profitable.
+
+#### Most profitable tag
+```{r}
+profitable_word <- Apple_Result %>%
+                      dplyr::group_by(Counts, Tag) %>%
+                      summarize(SumOfPriceDiffernces = PD1+PD2+PD3+PD4+PD5+PD6+PD7+PD8+PD9+PD10+PD11+PD12+PD13+PD14+PD15)
+
+knitr::kable(head(profitable_word[order(profitable_word$SumOfPriceDiffernces, decreasing = TRUE),], 15), format = "markdown")
+```
+
+The tag app shows the highest sum of price difference and is therefore, the most profitable
+
+### Comparison of Time Frames concerning Price Differences
+```{r message=FALSE, warning=FALSE}
+ggplot(data = PD_comparison, mapping = aes(x = variable, y = SumOfPriceDifferences, fill = variable)) +
+  geom_col(alpha = .8) +
+  guides(fill = FALSE) +
+  labs(title = "Comparison of Time Frames concerning Price Differences",
+       subtitle = "Time Frames: 1 min - 15 mins",
+       y = "Sum of Price Difference")
+```
+
+### Comparison of tags
+```{r}
+ggplot(data = head(profitable_word[order(profitable_word$SumOfPriceDiffernces, decreasing = TRUE),], 15),
+       mapping = aes(x = Tag, y = SumOfPriceDiffernces, fill = Tag)) +
+  geom_col(alpha = .8) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  guides(fill = FALSE) +
+  labs(title = "Comparison of Tags concerning Price Differences",
+       y = "Sum of Price Difference")
+```
+
+### Comparison of tags (without the tag "app)
+```{r}
+
+ggplot(data = head(subset(profitable_word, Tag != "app")[order(subset(profitable_word, Tag != "app")$SumOfPriceDiffernces, decreasing = TRUE),], 15),
+       mapping = aes(x = reorder(Tag, SumOfPriceDiffernces), y = SumOfPriceDiffernces, fill = Tag)) +
+  geom_col(alpha = .8) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  guides(fill = FALSE) +
+  labs(title = "Comparison of Tags concerning Price Differences",
+       subtitle = "Outlier Tag 'app' exluded",
+       y = "Sum of Price Difference")
+```
+
+### Distribution of top Ten Tags by Count
+```{r, warning=FALSE}
+plot <- melt(head(Apple_Result, 10), id = c("Symobl", "Counts", "Tag"))
+
+ggplot(data = plot, mapping = aes(x = value, y = reorder(Tag, value))) +
+  geom_boxplot(mapping = aes(fill = Tag), alpha = .2) +
+  geom_point(mapping = aes(color = Tag), alpha = .3, position = "jitter") +
+  scale_x_log10() +
+  guides(fill = FALSE, color = FALSE) +
+  labs(title = "Distribution of top Ten Tags by Count",
+       y = NULL, 
+       x = "Sum of Price difference (log 10)")
+```
+
+## Creating input data
+
+Tokenizers
+```{r}
+# converting the headlines into a sequence of integers
+text <- Apple$headline
+```
+
+Number of words
+```{r}
+max_features <- 1000
+tokenizer <- text_tokenizer(num_words = max_features)
+```
+
+Fit to the headlines
+```{r}
+tokenizer %>% fit_text_tokenizer(text)
+```
+
+Number of documents
+```{r}
+tokenizer$document_count
+```
+
+Word-Index list
+```{r}
+tokenizer$word_index %>% head()
+```
+
+List of integers
+```{r}
+text_seqs <- texts_to_sequences(tokenizer, text)
+knitr::kable(text_seqs %>% head(), format = "html")
+
+```
+
+## Model Building
+
+Set parameters
+```{r}
+maxlen <- 100
+batch_size <- 32
+embedding_dims <- 50
+filters <- 64
+kernel_size <- 3
+hidden_dims <- 50
+epochs <- 50
+```
+
+Preprocessing the text
+```{r}
+x_train <- text_seqs %>% pad_sequences(maxlen = maxlen)
+dim(x_train)
+```
+
+y-variable
+```{r}
+y_train <- Apple_Result$PD7
+length(y_train)
+```
+
+Model building
+```{r}
+model <- keras_model_sequential() %>%
+  layer_embedding(max_features, embedding_dims, input_length = maxlen) %>%
+  layer_dropout(0.5) %>%
+  layer_conv_1d(
+    filters, kernel_size,
+    padding = "valid", activation = "relu", strides = 1) %>%
+  layer_global_max_pooling_1d() %>%
+  layer_dense(hidden_dims) %>%
+  layer_dropout(0.5) %>%
+  layer_activation("relu") %>%
+  layer_dense(1) %>%
+  layer_activation("sigmoid") %>% compile(
+  loss = "binary_crossentropy",
+  optimizer = "adam",
+  metrics = "accuracy"
+)
+```
+
+## Model Evaluation
+
+```{r}
+#hist <- model %>%
+#  fit(
+#    x_train,
+#    y_train,
+#    batch_size = batch_size,
+#    epochs = epochs,
+#    validation_split = 0.8
+#  )
+#plot(hist)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

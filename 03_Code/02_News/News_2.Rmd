@@ -1,0 +1,574 @@
+---
+title: "Classification of news headlines with impact on the probability of stock prices changes"
+author: "Max Franke"
+date: April 28, 2020
+output: html_document
+---
+Course: CIS-627 CAPSTONE
+
+Term: Spring/T2
+
+# Capstone Project {.tabset}
+
+## Approach
+
+In this analysis, the following approach will be used:
+
+### 0. Workspace preparation
+
+ - This section will clean the workspace, load the libraries, the datasets and prepare the datasets
+
+### 1. Headline Tags
+
+ - The analysis starts with two datasets: Healines from 2019/2020 (1) and the Close stock prices from Apple (2) - Note: Later on, this approach will be rolled out for all companies in the  [Dow Jones Industrial Average](https://money.cnn.com/data/dow30/)
+
+#### Process
+
+ (1) Subset the news (headline and description) for the stock symbol (e.g. "Apple", and "AAPL"; transformation in lowercases)
+ (2) Iterate through each headline of the subset and count the words, result: table of the most frequently mentioned tags (e.g. update)
+ (3) Create a result dataframe: Symbol, Counts, Tag, Price Difference from minute 1 to minute 15
+ 
+ (3a) For each tag, the price difference from 1-15min will be calculated and to the result dataframe attanded
+ 
+ (3b) Check if there is a statistical difference between the time frames
+ 
+***
+
+### 2. Comparison of price differences
+
+ (1) Most profitable time frame
+ (2) Most profitable tag
+ (3) Distribution of top ten tags by count
+
+### 3. Creating input data
+
+ Predictors (x) = current close price, Volume, avg. top three tag price difference
+ 
+ | Variable             	| Example value                                                                 	|
+|----------------------	|----------------------------------------------------------------------------------	|
+| Current close price | 157.54 |
+| Volume | 172 |
+| FirstTag | 28.809 |
+| SecondTag | 24.496 |
+| ThirdTag | 23.273 |
+ 
+ Outcome (y) = Price difference for x min
+
+***
+
+### 4. Model Building
+
+ - Develop the convolutional neural network which takes as input the predictors
+ 
+ - Set the parameters: Batch size, filters, kernel size, epochs etc.
+ 
+ - Define structure of the network (how many layers, how many neurons, how many trials)
+
+### 5. Model Evaluation
+
+ - Check the model performance: Accuracy, overfitting etc.
+ 
+ - Compare the trials for different network structures and prove statistically the performance
+ 
+***
+ 
+### 6. Model Optimization
+
+ - tbd
+
+## Workspace preparation
+### Approach
+***
+In this section the workspace will be prepared. This means that first the global environment will be cleaned, and all required packages will be loaded.
+
+***
+### Clean Workspace
+```{r}
+rm(list = ls())
+```
+
+### Install libraries
+```{r message=FALSE, warning=FALSE, results='hide'}
+## Install packages
+my_packages <- c("plotly", "tidyverse", "reshape", "keras", "tm", "SnowballC", "sjmisc")
+#install.packages(my_packages, repos = "http://cran.rstudio.com")
+```
+
+### Load packages
+```{r message=FALSE, warning=FALSE, results='hide'}
+library(tidyverse)
+library(plotly)
+library(reshape)
+#library(keras)
+library(lubridate)
+library(tm)
+library(SnowballC)
+library(sjmisc)
+```
+
+### Load news Dataset
+```{r message=FALSE, warning=FALSE}
+## Load data of stocks with headlines and description
+setwd("/Users/MaxFranke/Desktop/05_Big Data Analytics/04_Classes/04 SP:Term2/CIS-627 CAPSTONE/News-Classification/02_Data/04_NewData")
+news <- read.csv("Stock Text Symbol - 2019-2020.csv")
+```
+### Transform data
+```{r message=FALSE, warning=FALSE}
+# Names of dataframe
+names(news) <- c("Date", "headline", "description")
+news$Date <- strptime(as.character(news$Date), format = "%m/%d/%Y %H:%M") + 5*60 - 5*60
+#knitr::kable(head(news, 3), format = "markdown")
+```
+
+### Load APPL dataset
+```{r message=FALSE, warning=FALSE, results='hide'}
+setwd("/Users/MaxFranke/Desktop/05_Big Data Analytics/04_Classes/04 SP:Term2/CIS-627 CAPSTONE/News-Classification/02_Data/04_NewData")
+apple <- read.csv("AAPL.USUSD_Candlestick_1_M_ASK_01.01.2019-23.04.2020.csv")
+```
+### Transform data
+```{r message=FALSE, warning=FALSE}
+apple$Local.time <- strptime(apple$Local.time, format = "%d.%m.%Y %H:%M")
+rownames(apple) <- NULL
+apple <- apple[,c(1,5,6)]
+names(apple) <- c("Date", "Close", "Volume")
+apple$Date <- apple$Date + 5*60 - 5*60
+knitr::kable(head(apple, 3), format = "markdown")
+```
+
+## Headline Tags
+
+```{r, warning=FALSE}
+news$headline <- str_replace_all(news$headline, "[[:punct:]]", " ")
+news$description <- str_replace_all(news$description, "[[:punct:]]", " ")
+# Check if Apple or AAPL exists in headline
+text_Apple_headline <- str_detect(tolower(news$headline), c("apple", "aapl"))
+# Check if Apple or AAPL exists in description
+text_Apple_description <- str_detect(tolower(news$description), c("apple", "aapl"))
+# Summarise in one dataset
+text_Apple_merge <- data.frame(headline = text_Apple_headline, description = text_Apple_description)
+# Get the rows where Apple or AAPL exists
+text_Apple_result <- which(text_Apple_merge[,1] == TRUE | text_Apple_merge[,2] == TRUE)
+
+Apple <- news[text_Apple_headline,]
+Apple
+#knitr::kable(head(Apple, 3), caption = paste("Identified news: ", nrow(Apple)), format = "markdown")
+```
+
+```{r}
+Apple <- read.csv("/Users/MaxFranke/Desktop/05_Big Data Analytics/04_Classes/04 SP:Term2/CIS-627 CAPSTONE/News-Classification/02_Data/04_NewData/Apple - Stock Text Symbol - 2019-2020.csv")
+names(Apple) <- c("Date", "headline", "description")
+Apple$Date <- strptime(as.character(Apple$Date), format = "%m/%d/%y %H:%M") + 5*60 - 5*60
+Apple$headline <- str_replace_all(Apple$headline, "[[:punct:]]", " ")
+Apple$description <- str_replace_all(Apple$description, "[[:punct:]]", " ")
+Apple
+```
+
+
+### Iterate through each headline and count the words
+
+
+#### Step 1: Extract and then load the headlines from dataset
+
+First, the column "headline" is extracted and saved to a txt.file. Then, this txt. file is load into R.
+
+The following table shows the first 3 titles of this file:
+
+```{r echo=FALSE}
+# Write column headline to txt. file
+write.table(Apple$headline, "Apple_headline.txt", row.names = FALSE, col.names = FALSE)
+text <- readLines("Apple_headline.txt")
+knitr::kable(head(data.frame(headline = text), 3), format = "markdown")
+```
+
+#### Step 2: Text mining
+
+1. Load the txt. file as a corpus
+
+```{r}
+# Load the data as a corpus
+docs <- Corpus(VectorSource(text))
+```
+
+3. Text transformation
+  - Replace special characters from text
+
+```{r warning=FALSE, message=FALSE}
+toSpace <- content_transformer(function (x , pattern ) gsub(pattern, " ", x))
+docs <- tm_map(docs, toSpace, "/")
+docs <- tm_map(docs, toSpace, "@")
+docs <- tm_map(docs, toSpace, "\\|")
+```
+
+4. Cleaning the text
+ - Convert the text to lower case
+ - Remove punctuations
+ - Eliminate extra white spaces
+ - Remove english common stopwords
+ - Remove the name of the stocks
+
+```{r warning=FALSE, message=FALSE}
+# Convert the text to lower case
+docs <- tm_map(docs, content_transformer(tolower))
+# Remove punctuations
+docs <- tm_map(docs, removePunctuation)
+# Eliminate extra white spaces
+docs <- tm_map(docs, stripWhitespace)
+# Remove english common stopwords
+docs <- tm_map(docs, removeWords, stopwords("english"))
+# Remove the name of the stocks
+docs <- tm_map(docs, removeWords, c("apple", "apples"))
+```
+
+#### Step 3: Building a term-document matrix
+A term-document matris is a table which contains the frequency of the words.
+
+In the following table, the first 20 words of this term-document matrix are shown.
+
+```{r}
+dtm <- TermDocumentMatrix(docs)
+dtm_matrix <- as.matrix(dtm)
+dtm_vector <- sort(rowSums(dtm_matrix),decreasing=TRUE)
+dtm_dataframe <- data.frame(word = names(dtm_vector),freq=dtm_vector)
+rownames(dtm_dataframe) <- NULL
+knitr::kable(head(dtm_dataframe, 20), format = "html")
+```
+#### Create result dataframe
+```{r}
+Apple_Result <- data.frame(Symbol = "AAPL",
+                           Counts = dtm_dataframe$freq,
+                           Tag = dtm_dataframe$word)
+Apple_Result[, c("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15")] <- NA
+names(Apple_Result) <- c("Symobl", "Counts", "Tag", paste0("PD", seq(1:15)))
+for (i in 4:18) {
+  Apple_Result[,i] <- as.numeric(Apple_Result[,i])
+}
+
+knitr::kable(head(Apple_Result, 5), format = "markdown")
+```
+
+
+#### ITERATION
+
+For each tag, the price difference from 1-15min will be calculated and to the result dataframe attanded
+
+```{r, warning=FALSE}
+# Remove the word apple to avoid that the tag "app" will be found in "apple"
+Apple$headline <- str_remove(tolower(Apple$headline),"apple")
+
+for (i in 1:nrow(dtm_dataframe)) {
+  # Get all rows from apple, where we can find the word i
+  Apple_table <- Apple[str_detect(tolower(as.character(Apple$headline)), as.character(dtm_dataframe[i,1])),]
+  # Delete all results which are between the time frame 16:00 - 09:30
+  Apple_table <- subset(Apple_table, hour(Date) < 16 & hour(Date) > 9)
+  # Merge the datasets
+  result <- merge(Apple_table, apple, by = "Date", sort = FALSE, all.x = TRUE)
+  # If the merge shows 0 rows or the close price was not found then don't calculate anything
+  if (nrow(result) == 0 || is.na(result$Close) == FALSE) {
+  # Attand the price difference from minute 1 to minute 15 to the dataframe Apple_Result
+    for (min in 1:15) {
+      minute <- result$Date + min*60
+      result$PriceDifference <- result$Close - apple[which(apple$Date %in% minute),2]
+      sumPD <- mean(result$PriceDifference, na.rm = TRUE)
+      Apple_Result[i,3+min] <- sumPD
+    }
+  }
+}
+
+# Replace all NAN with 0
+for (i in 1:ncol(Apple_Result)) {
+ Apple_Result[,i][is.nan(Apple_Result[,i])]<-0 
+ Apple_Result[,i][is.na(Apple_Result[,i])]<-0 
+}
+
+Apple_Result
+#knitr::kable(head(Apple_Result, 10), format = "markdown")
+```
+
+Note: If a headline was posted after 4 pm and before 9 am, it is not relevant for this analysis. Because there can not be price difference in a range aobut 15 min because the stock price doesn't change between 4 pm and 9:30 am in the morning.
+
+***
+
+#### Statistical difference between the minutes
+```{r}
+anova_df <- melt(Apple_Result, id = c("Symobl", "Counts", "Tag"))
+
+aov <- aov(value ~ variable, data = anova_df)
+summary(aov)
+TukeyHSD(aov)
+```
+
+There is no significant difference between the time frames.
+
+
+## Tags and Price Differences
+
+
+#### Most profitable time frame
+```{r}
+PD_comparison <- anova_df %>%
+          drop_na %>%
+          dplyr::group_by(variable) %>%
+          dplyr::summarize(AvgPriceDifferences = mean(value))
+
+knitr::kable(head(PD_comparison[order(PD_comparison$AvgPriceDifferences, decreasing = TRUE),], 15), format = "markdown")
+```
+
+The time frame 7 minutes is the most profitable.
+
+#### Most profitable tag
+```{r}
+profitable_word <- Apple_Result %>%
+                      drop_na() %>%
+                      dplyr::group_by(Counts, Tag) %>%
+                      summarize(AvgPriceDiffernces = (PD1+PD2+PD3+PD4+PD5+PD6+PD7+PD8+PD9+PD10+PD11+PD12+PD13+PD14+PD15)/15)
+
+knitr::kable(head(profitable_word[order(profitable_word$AvgPriceDiffernces, decreasing = TRUE),], 15), format = "markdown")
+```
+
+The tag qualcomm shows the highest sum of price difference and is therefore, the most profitable
+
+### Comparison of Time Frames concerning Price Differences
+```{r message=FALSE, warning=FALSE}
+ggplot(data = PD_comparison, mapping = aes(x = variable, y = AvgPriceDifferences, fill = variable)) +
+  geom_col(alpha = .8) +
+  guides(fill = FALSE) +
+  scale_y_continuous(limits = c(0,0.2)) +
+  labs(title = "Comparison of Time Frames concerning Price Differences",
+       subtitle = "Time Frames: 1 min - 15 mins",
+       y = "Average of Price Difference")
+
+```
+
+### Comparison of tags
+```{r}
+ggplot(data = head(profitable_word[order(profitable_word$AvgPriceDiffernces, decreasing = TRUE),], 15),
+       mapping = aes(x = reorder(Tag, AvgPriceDiffernces), y = AvgPriceDiffernces, fill = Tag)) +
+  geom_col(alpha = .8) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  guides(fill = FALSE) +
+  labs(title = "Comparison of Tags concerning Price Differences",
+       y = "Average of Price Difference",
+       x = NULL)
+```
+
+## Creating input data
+
+
+### Min Max Transformation (all features will have the exact same scale but does not handle outliers well)
+```{r}
+minMax <- function(x) {
+  return ((x - min(x)) / (max(x) - min(x)))
+}
+```
+
+### Z-Score (Handles outliers, but does not produce normalized data with the exact same scale)
+```{r}
+zScore <- function(x){
+  return(scale(x))
+}
+```
+
+### Weighted and normalized Price Difference for the tags
+```{r}
+# Weighted Tags
+weightedTags <- data.frame(Tag = Apple_Result$Tag,
+                           PriceDiff = NA)
+# Get the weighted mean for every Tag for the time frame 3 min
+for (i in 1:nrow(Apple_Result)) {
+  weightedTags[i,2] <- weighted.mean(Apple_Result[i,2], Apple_Result[i,6])
+}
+
+weightedTags$PriceDiff <- Apple_Result$PD3
+
+# Define TAGS
+TAGS <- data.frame(Tag = weightedTags$Tag,
+                   WeightedNormalizedPD <- weightedTags$PriceDiff)
+names(TAGS) <- c("Tag", "WeightedNormalizedPD")
+
+# Replace all NAN with 0
+TAGS$WeightedNormalizedPD[is.na(TAGS$WeightedNormalizedPD)] <- 0
+TAGS$WeightedNormalizedPD[is.nan(TAGS$WeightedNormalizedPD)] <- 0
+TAGS
+```
+
+### Top three Tag for each headline (result is a dataframe with weighted and normalized price difference for the top three tags for each headline)
+```{r}
+optimalTags <- data.frame(matrix(nrow = 0, ncol = 3))
+names(optimalTags) <- c("Tag1", "Tag2", "Tag3")
+
+for (i in 1:nrow(Apple)) {
+  # Get the sentence from headline
+  sentence <- word(Apple[i,2], 1, sapply(strsplit(Apple[i,2], " "), length))
+  # Get the three best Tags for this headline as a weighted and normalized mean
+  topThreeTags <- head(TAGS[str_detect(tolower(sentence), as.character(TAGS[,1])),2],3)
+  # Save these three values
+  result <- data.frame(Tag1 = topThreeTags[1],
+                       Tag2 = topThreeTags[2],
+                       Tag3 = topThreeTags[3])
+  optimalTags <- rbind(optimalTags, result)
+}
+optimalTags
+```
+
+### Get the volume, close price, and price difference for 3 min for each headline
+```{r}
+# Close Price and Volume
+CP_volume_PD <- merge(Apple, apple, by = "Date", sort = FALSE, all.x = TRUE)
+# Price Difference
+Apple_3min <- Apple
+Apple_3min$Date <- Apple_3min$Date + 3*60
+Apple_3min <- merge(Apple_3min, apple, by = "Date", sort = FALSE, all.x = TRUE)
+CP_volume_PD$PD <- CP_volume_PD$Close - Apple_3min$Close
+CP_volume_PD$PD <- zScore(CP_volume_PD$PD)
+
+CP_volume_PD
+```
+
+### Input: 
+
+Current close price, current volume, Price difference for 3 mins, weighted average and normalized price difference for the top three tags for each headline
+```{r}
+INPUT <- cbind(CP_volume_PD[,c(4,5,6)], optimalTags)
+# Drop all NA's
+INPUT <- INPUT %>% drop_na()
+```
+
+### Correlation
+```{r}
+pairs(INPUT)
+```
+
+
+### Export as csv file
+```{r}
+write_csv(x = INPUT, path = "Input.csv", col_names = TRUE)
+```
+
+
+## Model Building
+Load H2o
+```{r}
+library(h2o)
+# use all CPU threads
+h2o.init(nthreads = -1)
+```
+
+Load data
+```{r}
+Input <- h2o.importFile(path = normalizePath("/Users/MaxFranke/Desktop/05_Big Data Analytics/04_Classes/04 SP:Term2/CIS-627 CAPSTONE/News-Classification/03_Code/02_News/Input.csv"))
+dim(Input)
+Input
+```
+
+
+Splitting
+```{r}
+# split samples
+splits <- h2o.splitFrame(Input, c(0.6,0.2), seed=1234)
+train  <- h2o.assign(splits[[1]], "train.hex") # 60%
+valid  <- h2o.assign(splits[[2]], "valid.hex") # 20%
+test   <- h2o.assign(splits[[3]], "test.hex")  # 20%
+```
+
+Define predictors and response
+```{r}
+response <- "PD"
+predictors <- setdiff(names(Input), response)
+predictors
+```
+
+
+3-Layer ANN with 100 epochs
+```{r}
+h2oDL <- h2o.deeplearning(x = predictors,
+                          y = response,
+                          training_frame = train,
+                          hidden = c(200,200, 200),
+                          epochs = 1000,
+                          seed = 12345,
+                          validation_frame = valid,
+                          nfolds = 3)
+
+h2oDL@model$scoring_history
+
+pred <- h2o.predict(h2oDL, test)
+table <- table(as.vector(pred$predict), as.vector(test$PD))
+
+# Accuracy
+accuracy <- sum(diag(table)) / sum(rowSums(table))
+cat("3 layer accuracy:", accuracy)
+```
+
+
+
+```{r}
+m1 <- h2o.deeplearning(
+  model_id="dl_model_first", 
+  training_frame=train, 
+  validation_frame=valid,   ## validation dataset: used for scoring and early stopping
+  x=predictors,
+  y=response,
+  #activation="Rectifier",  ## default
+  #hidden=c(200,200),       ## default: 2 hidden layers with 200 neurons each
+  epochs=1,
+  variable_importances=T    ## not enabled by default
+)
+summary(m1)
+```
+
+```{r}
+m2 <- h2o.deeplearning(
+  model_id="dl_model_faster", 
+  training_frame=train, 
+  validation_frame=valid,
+  x=predictors,
+  y=response,
+  hidden=c(32,32,32),                  ## small network, runs faster
+  epochs=1000000,                      ## hopefully converges earlier...
+  score_validation_samples=10000,      ## sample the validation dataset (faster)
+  stopping_rounds=2,
+  stopping_metric="misclassification", ## could be "MSE","logloss","r2"
+  stopping_tolerance=0.01
+)
+```
+
+
+## Model Evaluation
+
+```{r}
+#hist <- model %>%
+#  fit(
+#    x_train,
+#    y_train,
+#    batch_size = batch_size,
+#    epochs = epochs,
+#    validation_split = 0.8
+#  )
+#plot(hist)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
