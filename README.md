@@ -83,7 +83,7 @@ Paramters:
 
 The graphic below shows a first impression of the relationship between the tags and the average price difference after 3 minutes:
 
-![Tags](/News-Classification/04_Results/02_graphs/Tags_PD.png)
+![Tags](/04_Results/02_graphs/Tags_PD.png)
 
 ## Privacy and storage
 This dashboard can be run locally (for example: [aws server](https://aws.amazon.com/de/)) or on personal machines (mac, windows). But keep in mind that the script will run all in all 1,372 neural networks for each approach. So, it will take time. If you want to save time, you can import the csv files, where the results of each network are stored. These files are stored in this repository. 
