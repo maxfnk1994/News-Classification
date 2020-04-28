@@ -38,7 +38,6 @@ In this analysis, the following approach will be used:
 
  (1) Most profitable time frame
  (2) Most profitable tag
- (3) Distribution of top ten tags by count
 
 ### 3. Creating input data
 
@@ -52,7 +51,7 @@ In this analysis, the following approach will be used:
 | SecondTag | 24.496 |
 | ThirdTag | 23.273 |
  
- Outcome (y) = Price difference for x min
+ Outcome (y) = Price difference for 3 min concerning the headline
 
 ***
 
@@ -117,7 +116,7 @@ news <- read.csv("Stock Text Symbol - 2019-2020.csv")
 # Names of dataframe
 names(news) <- c("Date", "headline", "description")
 news$Date <- strptime(as.character(news$Date), format = "%m/%d/%Y %H:%M") + 5*60 - 5*60
-#knitr::kable(head(news, 3), format = "markdown")
+knitr::kable(head(news, 3), format = "markdown")
 ```
 
 ### Load APPL dataset
@@ -150,11 +149,11 @@ text_Apple_merge <- data.frame(headline = text_Apple_headline, description = tex
 text_Apple_result <- which(text_Apple_merge[,1] == TRUE | text_Apple_merge[,2] == TRUE)
 
 Apple <- news[text_Apple_headline,]
-Apple
-#knitr::kable(head(Apple, 3), caption = paste("Identified news: ", nrow(Apple)), format = "markdown")
+
+knitr::kable(head(Apple, 3), caption = paste("Identified news: ", nrow(Apple)), format = "markdown")
 ```
 
-```{r}
+```{r, echo=FALSE, results='hide'}
 Apple <- read.csv("/Users/MaxFranke/Desktop/05_Big Data Analytics/04_Classes/04 SP:Term2/CIS-627 CAPSTONE/News-Classification/02_Data/04_NewData/Apple - Stock Text Symbol - 2019-2020.csv")
 names(Apple) <- c("Date", "headline", "description")
 Apple$Date <- strptime(as.character(Apple$Date), format = "%m/%d/%y %H:%M") + 5*60 - 5*60
@@ -254,12 +253,12 @@ For each tag, the price difference from 1-15min will be calculated and to the re
 ```{r, warning=FALSE}
 # Remove the word apple to avoid that the tag "app" will be found in "apple"
 Apple$headline <- str_remove(tolower(Apple$headline),"apple")
+# Delete all results which are between the time frame 16:00 - 09:30
+Apple_table <- subset(Apple_table, lubridate::hour(Date) < 16 & lubridate::hour(Date) > 9)
 
 for (i in 1:nrow(dtm_dataframe)) {
   # Get all rows from apple, where we can find the word i
   Apple_table <- Apple[str_detect(tolower(as.character(Apple$headline)), as.character(dtm_dataframe[i,1])),]
-  # Delete all results which are between the time frame 16:00 - 09:30
-  Apple_table <- subset(Apple_table, hour(Date) < 16 & hour(Date) > 9)
   # Merge the datasets
   result <- merge(Apple_table, apple, by = "Date", sort = FALSE, all.x = TRUE)
   # If the merge shows 0 rows or the close price was not found then don't calculate anything
@@ -274,14 +273,13 @@ for (i in 1:nrow(dtm_dataframe)) {
   }
 }
 
-# Replace all NAN with 0
+# Replace all NA and NAN with 0
 for (i in 1:ncol(Apple_Result)) {
  Apple_Result[,i][is.nan(Apple_Result[,i])]<-0 
  Apple_Result[,i][is.na(Apple_Result[,i])]<-0 
 }
 
-Apple_Result
-#knitr::kable(head(Apple_Result, 10), format = "markdown")
+knitr::kable(head(Apple_Result, 10), format = "markdown")
 ```
 
 Note: If a headline was posted after 4 pm and before 9 am, it is not relevant for this analysis. Because there can not be price difference in a range aobut 15 min because the stock price doesn't change between 4 pm and 9:30 am in the morning.
@@ -374,15 +372,15 @@ zScore <- function(x){
 weightedTags <- data.frame(Tag = Apple_Result$Tag,
                            PriceDiff = NA)
 # Get the weighted mean for every Tag for the time frame 3 min
-for (i in 1:nrow(Apple_Result)) {
-  weightedTags[i,2] <- weighted.mean(Apple_Result[i,2], Apple_Result[i,6])
-}
+#for (i in 1:nrow(Apple_Result)) {
+#  weightedTags[i,2] <- weighted.mean(Apple_Result[i,2], Apple_Result[i,6])
+#}
 
 weightedTags$PriceDiff <- Apple_Result$PD3
 
 # Define TAGS
 TAGS <- data.frame(Tag = weightedTags$Tag,
-                   WeightedNormalizedPD <- weightedTags$PriceDiff)
+                   WeightedNormalizedPD <- minMax(weightedTags$PriceDiff))
 names(TAGS) <- c("Tag", "WeightedNormalizedPD")
 
 # Replace all NAN with 0
@@ -418,8 +416,8 @@ CP_volume_PD <- merge(Apple, apple, by = "Date", sort = FALSE, all.x = TRUE)
 Apple_3min <- Apple
 Apple_3min$Date <- Apple_3min$Date + 3*60
 Apple_3min <- merge(Apple_3min, apple, by = "Date", sort = FALSE, all.x = TRUE)
-CP_volume_PD$PD <- CP_volume_PD$Close - Apple_3min$Close
-CP_volume_PD$PD <- zScore(CP_volume_PD$PD)
+CP_volume_PD$PD <- if_else((CP_volume_PD$Close - Apple_3min$Close) / CP_volume_PD$Close > 0, 1, 0 )
+#CP_volume_PD$PD <- zScore(CP_volume_PD$PD)
 
 CP_volume_PD
 ```
@@ -431,6 +429,7 @@ Current close price, current volume, Price difference for 3 mins, weighted avera
 INPUT <- cbind(CP_volume_PD[,c(4,5,6)], optimalTags)
 # Drop all NA's
 INPUT <- INPUT %>% drop_na()
+INPUT
 ```
 
 ### Correlation
@@ -492,7 +491,10 @@ h2oDL <- h2o.deeplearning(x = predictors,
 h2oDL@model$scoring_history
 
 pred <- h2o.predict(h2oDL, test)
-table <- table(as.vector(pred$predict), as.vector(test$PD))
+
+prediction <- if_else(as.vector(pred$predict) < 0.5, 0, 1)
+
+table <- table(as.vector(prediction), as.vector(test$PD))
 
 # Accuracy
 accuracy <- sum(diag(table)) / sum(rowSums(table))
