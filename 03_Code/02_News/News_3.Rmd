@@ -386,7 +386,8 @@ names(TAGS) <- c("Tag", "WeightedNormalizedPD")
 # Replace all NAN with 0
 TAGS$WeightedNormalizedPD[is.na(TAGS$WeightedNormalizedPD)] <- 0
 TAGS$WeightedNormalizedPD[is.nan(TAGS$WeightedNormalizedPD)] <- 0
-TAGS
+
+knitr::kable(head(TAGS, 15), format = "markdown")
 ```
 
 ### Top three Tag for each headline (result is a dataframe with weighted and normalized price difference for the top three tags for each headline)
@@ -405,10 +406,10 @@ for (i in 1:nrow(Apple)) {
                        Tag3 = topThreeTags[3])
   optimalTags <- rbind(optimalTags, result)
 }
-optimalTags
+knitr::kable(head(optimalTags, 15), format = "markdown")
 ```
 
-```{r}
+```{r, warning=FALSE}
 optimalTags_graph <- optimalTags
 optimalTags_graph$ID <- "ID"
 optimalTags_graph <- melt(optimalTags_graph, id = "ID")
@@ -434,7 +435,7 @@ Apple_3min <- merge(Apple_3min, apple, by = "Date", sort = FALSE, all.x = TRUE)
 CP_volume_PD$PD <- (CP_volume_PD$Close - Apple_3min$Close) / CP_volume_PD$Close
 CP_volume_PD$PD <- zScore(CP_volume_PD$PD)
 
-CP_volume_PD
+knitr::kable(head(CP_volume_PD, 3), format = "html")
 ```
 
 ### Input: 
@@ -444,7 +445,7 @@ Current close price, current volume, Price difference for 3 mins, weighted avera
 INPUT <- cbind(CP_volume_PD[,c(4,5,6)], optimalTags)
 # Drop all NA's
 INPUT <- INPUT %>% drop_na()
-INPUT
+knitr::kable(head(INPUT, 3), format = "html")
 ```
 
 
@@ -461,8 +462,9 @@ write_csv(x = INPUT, path = "Input.csv", col_names = TRUE)
 
 
 ## Model Building
+
 Load H2o
-```{r}
+```{r, warning=FALSE, echo=FALSE}
 library(h2o)
 # use all CPU threads
 h2o.init(nthreads = -1)
@@ -471,8 +473,6 @@ h2o.init(nthreads = -1)
 Load data
 ```{r}
 Input <- h2o.importFile(path = normalizePath("/Users/MaxFranke/Desktop/05_Big Data Analytics/04_Classes/04 SP:Term2/CIS-627 CAPSTONE/News-Classification/03_Code/02_News/Input.csv"))
-dim(Input)
-Input
 ```
 
 
@@ -535,9 +535,7 @@ write.csv(Result_layers, file = "Result_layers.csv")
 Import csv file
 ```{r}
 Result_layers <- read.csv("/Users/MaxFranke/Desktop/05_Big Data Analytics/04_Classes/04 SP:Term2/CIS-627 CAPSTONE/News-Classification/03_Code/02_News/Result_layers.csv")
-Result_layers
-
-summary(Result_layers)
+knitr::kable(head(Result_layers, 3), format = "markdown")
 ```
 
 
@@ -563,9 +561,9 @@ write.csv(head(epochs_results[order(epochs_results$value, decreasing = FALSE),],
 
 Average
 ```{r}
-epochs_results %>%
+knitr::kable(epochs_results %>%
   group_by(variable) %>%
-  summarize(AvgMSE = mean(value))
+  summarize(AvgMSE = mean(value)), format = "markdown")
 ```
 Distribution
 ```{r}
@@ -624,9 +622,7 @@ write.csv(Result_layers, file = "Result_layers_acc4.csv")
 Import csv file
 ```{r}
 Result_layers <- read.csv("/Users/MaxFranke/Desktop/05_Big Data Analytics/04_Classes/04 SP:Term2/CIS-627 CAPSTONE/News-Classification/03_Code/02_News/Result_layers_acc.csv")
-Result_layers
-
-summary(Result_layers)
+knitr::kable(head(Result_layers, 3), format = "html")
 ```
 Prove statistically if there is a significant difference between the epochs
 ```{r}
@@ -639,9 +635,9 @@ TukeyHSD(aov)
 ```
 Average
 ```{r}
-epochs_results %>%
+knitr::kable(epochs_results %>%
   group_by(variable) %>%
-  summarize(AvgMSE = mean(value))
+  summarize(AvgMSE = mean(value)), format = "html")
 ```
 Accuracy
 ```{r}
@@ -651,20 +647,3 @@ subset(epochs_results, value == min(epochs_results$value))
 # Top 10 Min MSE
 write.csv(head(epochs_results[order(epochs_results$value, decreasing = TRUE),], 10), "topTen_acc.csv")
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
