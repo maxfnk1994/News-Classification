@@ -323,7 +323,7 @@ The tag qualcomm shows the highest sum of price difference and is therefore, the
 ggplot(data = PD_comparison, mapping = aes(x = variable, y = AvgPriceDifferences, fill = variable)) +
   geom_col(alpha = .8) +
   guides(fill = FALSE) +
-  scale_y_continuous(limits = c(0,0.2)) +
+  scale_y_continuous(limits = c(0,0.15)) +
   labs(title = "Comparison of Time Frames concerning Price Differences",
        subtitle = "Time Frames: 1 min - 15 mins",
        y = "Average of Price Difference")
@@ -365,9 +365,9 @@ zScore <- function(x){
 weightedTags <- data.frame(Tag = Apple_Result$Tag,
                            PriceDiff = NA)
 
-# Normalize with min Max the Price Difference for 3 minutes
+# Normalize with zScore the Price Difference for 3 minutes
 Price_Difference_3min_norm <- zScore(Apple_Result$PD3)
-# Normalize with min Max the Counts
+# Normalize with ZScore the Counts
 Counts_norm <- zScore(Apple_Result$Counts)
 
 # Weighted mean
@@ -408,6 +408,21 @@ for (i in 1:nrow(Apple)) {
 optimalTags
 ```
 
+```{r}
+optimalTags_graph <- optimalTags
+optimalTags_graph$ID <- "ID"
+optimalTags_graph <- melt(optimalTags_graph, id = "ID")
+ggplot(data = optimalTags_graph, mapping = aes(x = value, y = variable)) +
+  geom_boxplot(mapping = aes(fill = variable), alpha = 0.3, outlier.size = 0) +
+  geom_point(mapping = aes(color = variable), alpha = 0.1) +
+  guides(fill = FALSE, color = FALSE) +
+  labs(title = "Distribution of the top three Tags for each headline",
+       x = "Weighted Average and normalized Price Difference after 3 min",
+       y = NULL)
+```
+
+
+
 ### Get the volume, close price, and price difference for 3 min for each headline
 ```{r}
 # Close Price and Volume
@@ -431,6 +446,7 @@ INPUT <- cbind(CP_volume_PD[,c(4,5,6)], optimalTags)
 INPUT <- INPUT %>% drop_na()
 INPUT
 ```
+
 
 ### Correlation
 ```{r}
@@ -478,8 +494,8 @@ predictors
 
 Appraoch: Reduce the MSE by changegin the layer permutation and the epochs
 ```{r}
-layers <- expand.grid(rep(list(c(5, 10, 20, 40, 80, 100, 200)), 3))
-Result_layers <- expand.grid(rep(list(c(5, 10, 20, 40, 80, 100, 200)), 3))
+layers <- expand.grid(rep(list(c(5, 10, 20, 40, 80)), 3))
+Result_layers <- expand.grid(rep(list(c(5, 10, 20, 40, 80)), 3))
 names(Result_layers) <- c("Hidden1", "Hidden2", "Hidden3")
 Result_layers$MSE_10ep <- NA
 Result_layers$MSE_100ep <- NA
@@ -487,7 +503,7 @@ Result_layers$MSE_1000ep <- NA
 Result_layers$MSE_10000ep <- NA
 
 # For every layer combination
-for (i in 99:nrow(layers)) {
+for (i in 193:nrow(layers)) {
   # and for the different epochs
   for (epochs in c(10,100,1000, 10000)) {
 # Create the model
@@ -509,26 +525,132 @@ h2oDL <- h2o.deeplearning(x = predictors,
       Result_layers[i,7] <- h2o.mse(object = h2oDL)
     }
   }
-write.csv(Result_layers, file = "Result_layers2.csv")
+write.csv(Result_layers, file = "Result_layers.csv")
 }
+
+
 
 ```
 
+Import csv file
+```{r}
+Result_layers <- read.csv("/Users/MaxFranke/Desktop/05_Big Data Analytics/04_Classes/04 SP:Term2/CIS-627 CAPSTONE/News-Classification/03_Code/02_News/Result_layers.csv")
+Result_layers
+
+summary(Result_layers)
+```
+
+
 Prove statistically if there is a significant difference between the epochs
 ```{r}
-epochs_results <- melt(Result_layers, id = c("Hidden1", "Hidden2"))
+epochs_results <- melt(Result_layers, id = c("Hidden1", "Hidden2", "Hidden3"))
   
 aov <- aov(value ~ variable, data = epochs_results)
 summary(aov)
 TukeyHSD(aov)
+
+```
+
+MSE
+```{r}
+# Min MSE 
+subset(epochs_results, value == min(epochs_results$value))
+
+# Top 10 Min MSE
+write.csv(head(epochs_results[order(epochs_results$value, decreasing = FALSE),], 10), "topTen.csv")
 ```
 
 
+Average
+```{r}
+epochs_results %>%
+  group_by(variable) %>%
+  summarize(AvgMSE = mean(value))
+```
+Distribution
+```{r}
+ggplot(data = epochs_results, mapping = aes(x = value, y = variable)) +
+  geom_boxplot(mapping = aes(fill = variable), alpha = 0.3, outlier.size = 0) +
+  geom_point(mapping = aes(color = variable), alpha = 0.1) +
+  guides(fill = FALSE, color = FALSE) +
+  labs(title = "Distribution of the MSE for the different Number of epochs",
+       x = "MSE",
+       y = NULL)
+```
 
+### Accuarcy
 
+```{r}
+layers <- expand.grid(rep(list(c(5, 10, 20, 40, 80)), 3))
+Result_layers <- expand.grid(rep(list(c(5, 10, 20, 40, 80)), 3))
+names(Result_layers) <- c("Hidden1", "Hidden2", "Hidden3")
+Result_layers$ACC_10ep <- NA
+Result_layers$ACC_100ep <- NA
+Result_layers$ACC_1000ep <- NA
+Result_layers$ACC_10000ep <- NA
 
+# For every layer combination
+for (i in 1:nrow(layers)) {
+  # and for the different epochs
+  for (epochs in c(10,100,1000, 10000)) {
+# Create the model
+h2oDL <- h2o.deeplearning(x = predictors,
+                          y = response,
+                          training_frame = train,
+                          hidden = c(layers[i,1], layers[i,2]),
+                          epochs = epochs,
+                          seed = 12345,
+                          validation_frame = valid)
+pred <- h2o.predict(h2oDL, test)
+table <- table(if_else(as.vector(pred$predict) > 0, 1, 0), if_else(as.vector(test$PD) > 0, 1, 0))
+accuracy <- (table[1,1] + table[2,2]) / sum(table)
 
+    # Append the MSE to the result dataframe
+    if (epochs == 10) {
+        Result_layers[i,4] <- accuracy
+    } else if (epochs == 100) {
+      Result_layers[i,5] <- accuracy
+    } else if (epochs == 1000) {
+      Result_layers[i,6] <- accuracy
+    } else {
+      Result_layers[i,7] <- accuracy
+    }
+  }
+write.csv(Result_layers, file = "Result_layers_acc4.csv")
+}
 
+```
+
+Import csv file
+```{r}
+Result_layers <- read.csv("/Users/MaxFranke/Desktop/05_Big Data Analytics/04_Classes/04 SP:Term2/CIS-627 CAPSTONE/News-Classification/03_Code/02_News/Result_layers_acc.csv")
+Result_layers
+
+summary(Result_layers)
+```
+Prove statistically if there is a significant difference between the epochs
+```{r}
+epochs_results <- melt(Result_layers, id = c("Hidden1", "Hidden2", "Hidden3"))
+  
+aov <- aov(value ~ variable, data = epochs_results)
+summary(aov)
+TukeyHSD(aov)
+
+```
+Average
+```{r}
+epochs_results %>%
+  group_by(variable) %>%
+  summarize(AvgMSE = mean(value))
+```
+Accuracy
+```{r}
+# Min MSE 
+subset(epochs_results, value == min(epochs_results$value))
+
+# Top 10 Min MSE
+write.csv(head(epochs_results[order(epochs_results$value, decreasing = TRUE),], 10), "topTen_acc.csv")
+```
 
 
 
